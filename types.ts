@@ -2,6 +2,7 @@
 export type WeatherType = 'CLEAR' | 'CLOUDY' | 'RAIN' | 'STORM';
 export type BoatType = 'wooden' | 'fiberglass' | 'yacht';
 export type RodSkinType = 'default' | 'carbon' | 'magma' | 'cyber' | 'bamboo' | 'samurai' | 'bone';
+export type MapType = 'default' | 'atlantis';
 
 export type EventType = 'GOLD_RUSH' | 'LUCKY_WATERS' | 'FEEDING_FRENZY';
 
@@ -65,6 +66,9 @@ export interface GameState {
   // Rod Skin State
   rodSkin: RodSkinType;
   ownedSkins: RodSkinType[];
+
+  // Map State
+  currentMap: MapType;
   
   // Event State (Persisted so reloading doesn't kill an active event immediately)
   savedEvent: ActiveEvent | null;

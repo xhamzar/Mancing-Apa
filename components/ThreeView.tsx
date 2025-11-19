@@ -19,14 +19,15 @@ import { BoatController } from './BoatController';
 import { BobberController } from './BobberController';
 import { WeatherController } from './WeatherController';
 import { FishingSpotController } from './FishingSpotController';
-import { SeabedController } from './SeabedController'; // Import Seabed
-import { WeatherType, BoatType, RodSkinType } from '../types';
+import { SeabedController } from './SeabedController';
+import { WeatherType, BoatType, RodSkinType, MapType } from '../types';
 
 interface ThreeViewProps {
   rodLevel: number;
   enchant: string;
   boatType: BoatType;
   rodSkin: RodSkinType;
+  map: MapType;
   onReady?: (api: ThreeViewApi) => void;
   onWeatherUpdate?: (weather: WeatherType, time: number) => void;
 }
@@ -37,7 +38,7 @@ export interface ThreeViewApi {
   setReeling: (reeling: boolean) => void;
 }
 
-const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodSkin, onReady, onWeatherUpdate }) => {
+const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodSkin, map, onReady, onWeatherUpdate }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<ThreeViewApi>({ cast: () => {}, reset: () => {}, setReeling: () => {} });
   
@@ -49,7 +50,7 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
   const bobberCtrlRef = useRef<BobberController | null>(null);
   const weatherCtrlRef = useRef<WeatherController | null>(null);
   const spotCtrlRef = useRef<FishingSpotController | null>(null);
-  const seabedCtrlRef = useRef<SeabedController | null>(null); // Seabed Ref
+  const seabedCtrlRef = useRef<SeabedController | null>(null);
 
   const objectsRef = useRef<{
     line: THREE.Line | null;
@@ -65,6 +66,9 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
 
   useEffect(() => {
     if (!containerRef.current) return;
+    
+    // Prevents double-initialization in strict mode or rapid re-renders
+    if (rendererRef.current) return;
 
     // 1. Scene
     const scene = new THREE.Scene();
@@ -75,24 +79,50 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     camera.position.set(0, 5, 10);
     camera.lookAt(0, 0, -10);
 
-    // 2. Renderer
-    // Use powerPreference default to be less aggressive on GPU resources
-    const renderer = new THREE.WebGLRenderer({ 
-        antialias: false, 
-        powerPreference: "default",
-        depth: true,
-        stencil: false
-    }); 
-    rendererRef.current = renderer; // Assign immediately for safety
+    // 2. Renderer (Safe Init)
+    let renderer: THREE.WebGLRenderer;
+    
+    try {
+      // Explicitly create canvas to attach event listeners before renderer creation
+      const canvas = document.createElement('canvas');
+      
+      // CRITICAL: Prevent "Web page caused context loss and was blocked"
+      canvas.addEventListener("webglcontextlost", (event) => {
+          event.preventDefault();
+          console.warn("WebGL Context Lost");
+      }, false);
+      
+      canvas.addEventListener("webglcontextrestored", () => {
+          console.log("WebGL Context Restored");
+          // In a real app, we would reload assets here. 
+          // For now, we prevent the crash.
+      }, false);
+
+      renderer = new THREE.WebGLRenderer({ 
+          canvas: canvas,
+          antialias: false, 
+          powerPreference: "default",
+          depth: true,
+          stencil: false
+      }); 
+      rendererRef.current = renderer;
+    } catch (e) {
+      console.error("WebGL Context creation failed. Browser might be out of resources.", e);
+      return;
+    }
 
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // Limit pixel ratio to save resources on high-DPI screens
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.5;
-    containerRef.current.appendChild(renderer.domElement);
+    
+    // Use the canvas element we created
+    if (containerRef.current) {
+        containerRef.current.innerHTML = ''; // Clear any debris
+        containerRef.current.appendChild(renderer.domElement);
+    }
 
     // 3. Post Processing
     const composer = new EffectComposer(renderer);
@@ -117,7 +147,6 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
     dirLight.position.set(30, 100, 10);
     dirLight.castShadow = true;
-    // Optimize shadow map size
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
     dirLight.shadow.camera.near = 0.5;
@@ -144,14 +173,13 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     
     const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
     
-    // Generate Water Normal Texture Programmatically to avoid loading errors/black screen
-    const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 512;
-    const ctx = canvas.getContext('2d');
+    // Generate Water Normal Texture Programmatically
+    const canvasTexture = document.createElement('canvas');
+    canvasTexture.width = 512; canvasTexture.height = 512;
+    const ctx = canvasTexture.getContext('2d');
     if(ctx) {
-        ctx.fillStyle = '#8080ff'; // Flat normal blueish
+        ctx.fillStyle = '#8080ff'; 
         ctx.fillRect(0,0,512,512);
-        // Simple noise simulation for normals
         for(let i=0; i<20000; i++) {
             const x = Math.random()*512;
             const y = Math.random()*512;
@@ -159,7 +187,7 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
             ctx.fillRect(x,y, 4, 4);
         }
     }
-    const normalMap = new THREE.CanvasTexture(canvas);
+    const normalMap = new THREE.CanvasTexture(canvasTexture);
     normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
 
     const water = new Water(
@@ -197,7 +225,6 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     spotCtrl.addToScene(scene);
     spotCtrlRef.current = spotCtrl;
 
-    // 6.5 SEABED (Atlantis)
     const seabedCtrl = new SeabedController();
     seabedCtrl.addToScene(scene);
     seabedCtrlRef.current = seabedCtrl;
@@ -219,6 +246,9 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     let lastTime = Date.now();
 
     const animate = () => {
+      // Check if context is lost
+      if (!rendererRef.current || !rendererRef.current.getContext()) return;
+      
       animationId = requestAnimationFrame(animate);
       const now = Date.now();
       const dt = (now - lastTime) / 1000;
@@ -232,21 +262,17 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
       if (weatherCtrlRef.current) {
         weatherCtrlRef.current.update(dt);
         
-        // Toggle Boat Lights at Night
         const weatherState = weatherCtrlRef.current.state;
         const isNight = weatherState.time < 6 || weatherState.time > 18;
         if (boatCtrlRef.current) boatCtrlRef.current.setNightMode(isNight);
 
-        // Update Fishing Spots based on Weather
         if (spotCtrlRef.current) {
           spotCtrlRef.current.update(dt, weatherState);
         }
 
-        // Sync Weather to React
         if (onWeatherUpdate) {
             const currentHour = Math.floor(weatherState.time);
             const last = lastWeatherReportRef.current;
-            
             if (last.weather !== weatherState.weather || last.hour !== currentHour) {
                 lastWeatherReportRef.current = { weather: weatherState.weather, hour: currentHour };
                 onWeatherUpdate(weatherState.weather, weatherState.time);
@@ -259,7 +285,7 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
       if (bobberCtrlRef.current) bobberCtrlRef.current.animate(time);
       if (seabedCtrlRef.current) seabedCtrlRef.current.animate(time);
 
-      // Rod/Line/Bobber Logic
+      // Rod/Line Logic
       const { isCasted, targetPos } = stateRef.current;
       const { line } = objectsRef.current;
       const rodTipPos = new THREE.Vector3();
@@ -268,7 +294,6 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
       if (isCasted && bobberCtrlRef.current && line) {
         bobberCtrlRef.current.position.lerp(targetPos, 0.05);
         
-        // Subtle bobbing animation
         const bobble = Math.sin(time * 2.5) * 0.04 + Math.cos(time * 1.5) * 0.02;
         bobberCtrlRef.current.position.y = bobble - 0.05;
 
@@ -294,8 +319,10 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
     const handleResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      composer.setSize(window.innerWidth, window.innerHeight);
+      if (rendererRef.current) {
+          rendererRef.current.setSize(window.innerWidth, window.innerHeight);
+          composer.setSize(window.innerWidth, window.innerHeight);
+      }
     };
     window.addEventListener('resize', handleResize);
 
@@ -305,32 +332,36 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
       cancelAnimationFrame(animationId);
       
       // Dispose Scene Objects
-      scene.traverse((object) => {
-          if (object instanceof THREE.Mesh) {
-              object.geometry.dispose();
-              if (Array.isArray(object.material)) {
-                  object.material.forEach((m: any) => m.dispose());
-              } else {
-                  object.material.dispose();
+      if (sceneRef.current) {
+          sceneRef.current.traverse((object) => {
+              if (object instanceof THREE.Mesh) {
+                  object.geometry.dispose();
+                  if (Array.isArray(object.material)) {
+                      object.material.forEach((m: any) => m.dispose());
+                  } else {
+                      object.material.dispose();
+                  }
               }
-          }
-      });
+          });
+      }
       
-      // Dispose Composer and its passes/targets
+      // Dispose Composer
       composer.dispose();
 
       // Dispose Renderer and Force Context Loss
-      renderer.dispose();
-      try {
-        renderer.forceContextLoss();
-      } catch (e) { console.warn('Force context loss failed', e); }
-      
-      // Remove Canvas from DOM
-      if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement);
+      if (renderer) {
+          try {
+            // Force loss to free up browser limit
+            renderer.forceContextLoss();
+            renderer.dispose();
+          } catch (e) { console.warn('Force context loss failed', e); }
+          
+          // Remove Canvas from DOM
+          if (renderer.domElement && renderer.domElement.parentNode) {
+            renderer.domElement.parentNode.removeChild(renderer.domElement);
+          }
       }
 
-      // Clear Refs
       rendererRef.current = null;
       sceneRef.current = null;
       rodCtrlRef.current = null;
@@ -356,6 +387,14 @@ const ThreeView: React.FC<ThreeViewProps> = ({ rodLevel, enchant, boatType, rodS
           boatCtrlRef.current.update(boatType);
       }
   }, [boatType]);
+
+  // Handle Map Changes
+  useEffect(() => {
+      if (seabedCtrlRef.current) {
+          // Toggle seabed controller based on map
+          seabedCtrlRef.current.setVisible(map === 'atlantis');
+      }
+  }, [map]);
 
   apiRef.current.cast = (distance: number) => {
     stateRef.current.isCasted = true;

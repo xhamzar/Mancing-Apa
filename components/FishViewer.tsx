@@ -33,19 +33,29 @@ const FishViewer: React.FC<FishViewerProps> = ({ fishType, onClose }) => {
     camera.position.set(0, 1, 5.5);
     camera.lookAt(0, 0, 0);
 
-    // Disable antialias for that crisp retro look (optional, but helps low poly style)
-    const renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
-        alpha: true, 
-        powerPreference: "default" 
-    });
-    rendererRef.current = renderer; // Assign immediately
+    // 2. Renderer (Safe Init)
+    let renderer: THREE.WebGLRenderer;
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); }, false);
+
+        renderer = new THREE.WebGLRenderer({ 
+            canvas: canvas,
+            antialias: true, 
+            alpha: true, 
+            powerPreference: "default" 
+        });
+        rendererRef.current = renderer; 
+    } catch (e) {
+        console.error("Failed to create fish viewer renderer", e);
+        return;
+    }
 
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
     mountRef.current.appendChild(renderer.domElement);
 
-    // 2. Lighting (Stronger directional lights for faceted look)
+    // 3. Lighting (Stronger directional lights for faceted look)
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambientLight);
 
@@ -68,6 +78,8 @@ const FishViewer: React.FC<FishViewerProps> = ({ fishType, onClose }) => {
     // 4. Animation Loop
     let animationId: number;
     const animate = () => {
+      if (!rendererRef.current) return;
+      
       animationId = requestAnimationFrame(animate);
       
       if (fishGroup) {
@@ -112,13 +124,15 @@ const FishViewer: React.FC<FishViewerProps> = ({ fishType, onClose }) => {
       }
 
       // Explicit cleanup using the local 'renderer' variable
-      renderer.dispose();
-      try {
-        renderer.forceContextLoss();
-      } catch (e) { console.warn("Context loss failed", e); }
-      
-      if (mountRef.current && renderer.domElement.parentNode === mountRef.current) {
-        mountRef.current.removeChild(renderer.domElement);
+      if (renderer) {
+          try {
+            renderer.forceContextLoss();
+            renderer.dispose();
+          } catch (e) { console.warn("Context loss failed", e); }
+          
+          if (renderer.domElement && renderer.domElement.parentNode) {
+              renderer.domElement.parentNode.removeChild(renderer.domElement);
+          }
       }
 
       rendererRef.current = null;

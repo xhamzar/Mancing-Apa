@@ -75,6 +75,7 @@ const INITIAL_STATE: GameState = {
   ownedBoats: ['wooden'],
   rodSkin: 'default',
   ownedSkins: ['default'],
+  currentMap: 'default',
   savedEvent: null
 };
 
@@ -494,6 +495,7 @@ const App: React.FC = () => {
         enchant={gameState.equippedEnchant}
         boatType={gameState.boatType}
         rodSkin={gameState.rodSkin}
+        map={gameState.currentMap}
         onReady={(api) => threeApi.current = api} 
         onWeatherUpdate={onWeatherUpdate}
       />

@@ -1,0 +1,637 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Mancing Mania - Offline Version</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "three": "https://esm.sh/three@0.160.0",
+        "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0"
+      }
+    }
+    </script>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+      body { font-family: 'Inter', sans-serif; overscroll-behavior: none; user-select: none; background-color: #000; color: white; }
+      .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.5); color: #1e293b; }
+      @keyframes slideDown { 0% { transform: translate(-50%, -20px); opacity: 0; } 100% { transform: translate(-50%, 0); opacity: 1; } }
+      /* Scrollbar */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+      ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="react,typescript">
+    import React, { useState, useEffect, useRef, useCallback } from 'react';
+    import ReactDOM from 'react-dom/client';
+    import * as THREE from 'three';
+    import { Water } from 'three/addons/objects/Water.js';
+    import { Sky } from 'three/addons/objects/Sky.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { Fish, Coins, ShoppingBag, Backpack, Trophy, Settings, RotateCcw, Camera, Sun, Moon, Cloud, CloudRain, CloudLightning, Anchor, Palette, Download, Eye, Bot, Lock, Unlock, Clock, Zap, Sparkles, TrendingUp, Timer, Crown, Map as MapIcon, AlertOctagon } from 'lucide-react';
+
+    // ==========================================
+    // 1. DATA & CONSTANTS
+    // ==========================================
+
+    const FISH_TYPES = [
+        { id:'common', name:'Goldfish', displayName:'Goldfish', color: '#F59E0B', base:20, weight:100, difficulty:1, minDistance: 0 },
+        { id:'common_mutant', name:'Toxic Goldfish', displayName:'Toxic Goldfish', color: '#39FF14', base:50, weight:15, difficulty:3, minDistance: 20, requiredWeather: ['RAIN', 'STORM'] },
+        { id:'blue', name:'Neon Tetra', displayName:'Neon Tetra', color: '#0077be', base:60, weight:60, difficulty:2, minDistance: 50 },
+        { id:'blue_mutant', name:'Plasma Tetra', displayName:'Plasma Tetra', color: '#00FFFF', base:120, weight:10, difficulty:4, minDistance: 60, requiredTime: 'NIGHT' },
+        { id:'rare', name:'Arowana', displayName:'Arowana', color: '#8E44AD', base:180, weight:25, difficulty:4, minDistance: 100, requiredTime: 'DAY' },
+        { id:'rare_mutant', name:'Ghost Arowana', displayName:'Ghost Arowana', color: '#E0E0E0', base:350, weight:5, difficulty:6, minDistance: 120, requiredWeather: ['CLOUDY', 'STORM'] },
+        { id:'legend', name:'Coelacanth', displayName:'Coelacanth', color: '#D9534F', base:500, weight:10, difficulty:7, minDistance: 200, requiredTime: 'NIGHT' },
+        { id:'legend_mutant', name:'Cursed Coelacanth', displayName:'Cursed Coelacanth', color: '#2F4F4F', base:900, weight:3, difficulty:8, minDistance: 210, requiredEnchant: ['lucky', 'ancient', 'deep'] },
+        { id:'ancient', name:'Dunkleosteus', displayName:'Dunkleosteus', color: '#4B0082', base:300, weight:8, difficulty:5, minDistance: 180, requiredWeather: ['RAIN', 'STORM'] },
+        { id:'ancient_mutant', name:'Magma Dunkle', displayName:'Magma Dunkleosteus', color: '#FF4500', base:700, weight:4, difficulty:7, minDistance: 190, requiredTime: 'DAY' },
+        { id:'mythical', name:'Leedsichthys', displayName:'Leedsichthys', color: '#FF69B4', base:400, weight:5, difficulty:6, minDistance: 220, requiredWeather: ['CLOUDY', 'RAIN'] },
+        { id:'cosmic', name:'Megalodon', displayName:'Megalodon', color: '#001F3F', base:800, weight:3, difficulty:8, minDistance: 280, requiredTime: 'NIGHT' },
+        { id:'cosmic_mutant', name:'Abyssal Megalodon', displayName:'Abyssal Megalodon', color: '#000000', base:1500, weight:1, difficulty:9, minDistance: 300, requiredEnchant: ['deep', 'ancient'] },
+        { id:'rainbow', name:'Rainbow Trout', displayName:'Rainbow Trout', color: '#FF7F00', base:1000, weight:2, difficulty:9, minDistance: 150, requiredWeather: ['CLEAR'] },
+        { id:'dragon', name:'Sea Dragon', displayName:'Sea Dragon', color: '#FF4500', base:2500, weight:0.5, difficulty:10, minDistance: 320, requiredWeather: ['STORM'], requiredEnchant: ['ancient', 'lucky'] },
+        { id:'dragon_mutant', name:'Void Dragon', displayName:'Void Dragon', color: '#9900FF', base:5000, weight:0.1, difficulty:10, minDistance: 350, requiredWeather: ['STORM'], requiredEnchant: ['ancient'] }
+    ];
+
+    const ENCHANT_POOL = [
+        {id:'lucky', name:'Lucky', weight: 30}, {id:'deep', name:'Deep', weight: 25},
+        {id:'steady', name:'Steady', weight: 25}, {id:'golden', name:'Golden', weight: 15},
+        {id:'ancient', name:'Ancient', weight: 5}
+    ];
+
+    const BOAT_SHOP = [
+        { id: 'wooden', name: 'Old Rowboat', price: 0, desc: 'Classic and reliable.' },
+        { id: 'fiberglass', name: 'Speedboat', price: 1500, desc: 'Sleek design for the modern fisher.' },
+        { id: 'yacht', name: 'Luxury Yacht', price: 8000, desc: 'The ultimate status symbol.' },
+    ];
+
+    const ROD_SKINS = [
+        { id: 'default', name: 'Standard', price: 0, desc: 'Changes appearance based on level.', color: '#8B4513' },
+        { id: 'carbon', name: 'Carbon Fiber', price: 500, desc: 'Sleek, matte black lightweight composite.', color: '#333333' },
+        { id: 'bamboo', name: 'Zen Bamboo', price: 800, desc: 'Traditional craftsmanship.', color: '#8ba858' },
+        { id: 'magma', name: 'Magma Forged', price: 2500, desc: 'Glowing with the heat of the earth.', color: '#ff4500' },
+        { id: 'cyber', name: 'Cyberpunk 2077', price: 5000, desc: 'Neon lights and futuristic metal.', color: '#00ffff' },
+        { id: 'samurai', name: 'Ronin Blade', price: 3500, desc: 'Folded steel rod with a Katana hilt.', color: '#d4af37' },
+        { id: 'bone', name: 'Leviathan Bone', price: 4000, desc: 'Carved from the spine of a sea beast.', color: '#e3DAC9' },
+    ];
+
+    const MAPS = [
+        { id: 'ocean', name: 'Open Ocean', desc: 'Deep blue waters. Great for beginners.', color: '#0077be' },
+        { id: 'atlantis', name: 'Atlantis Ruins', desc: 'Mystic sunken city. Home to ancient fish.', color: '#00ffff' },
+    ];
+
+    // Helper: Faceted SVG Generator for UI
+    const genFishImg = (color, shape) => {
+       // Simplified for standalone: just use placeholder for robustness
+       return `https://placehold.co/200x200/${color.replace('#','')}/ffffff?text=Fish`;
+    };
+
+    const FISH_IMAGES = {};
+    FISH_TYPES.forEach(f => { FISH_IMAGES[f.id] = genFishImg(f.color, 'generic'); });
+
+
+    // ==========================================
+    // 2. GAME CONTROLLERS (Logic Classes)
+    // ==========================================
+
+    class WeatherController {
+        constructor(scene, sky, sunLight, ambientLight, water) {
+            this.scene = scene; this.sky = sky; this.sunLight = sunLight;
+            this.ambientLight = ambientLight; this.water = water;
+            this.timeOfDay = 8; this.currentWeather = 'CLEAR';
+            this.sunPosition = new THREE.Vector3();
+            this.lanternLight = new THREE.PointLight(0xffaa00, 0, 40, 1.5);
+            this.lanternLight.position.set(1.0, 2.5, 8);
+            this.scene.add(this.lanternLight);
+        }
+        get state() { return { weather: this.currentWeather, time: this.timeOfDay }; }
+        update(dt) {
+            this.timeOfDay += dt * 0.02; if (this.timeOfDay >= 24) this.timeOfDay = 0;
+            const phi = THREE.MathUtils.mapLinear(Math.sin((this.timeOfDay - 6) / 24 * Math.PI * 2), -1, 1, Math.PI - 0.2, 0.2);
+            this.sunPosition.setFromSphericalCoords(1, phi, Math.PI);
+            this.sky.material.uniforms['sunPosition'].value.copy(this.sunPosition);
+            this.water.material.uniforms['sunDirection'].value.copy(this.sunPosition).normalize();
+            this.sunLight.position.copy(this.sunPosition).multiplyScalar(100);
+            
+            const isDay = (Math.PI/2 - phi) > 0;
+            this.sunLight.intensity = isDay ? 1.2 : 0.4;
+            this.sunLight.color.setHex(isDay ? 0xffffff : 0x6688aa);
+            
+            if (this.currentWeather === 'RAIN') this.sunLight.intensity *= 0.5;
+            if (this.currentWeather === 'STORM') this.sunLight.intensity *= 0.2;
+
+            this.lanternLight.intensity = (!isDay || this.currentWeather === 'STORM') ? 1.0 : 0;
+        }
+    }
+
+    class BoatController {
+        constructor() {
+            this.group = new THREE.Group();
+            this.group.position.set(0, 0, 10);
+        }
+        addToScene(scene) { scene.add(this.group); }
+        update(type) {
+            this.group.clear();
+            // Simple boat shapes for standalone
+            let color = 0x8B4513;
+            if(type === 'fiberglass') color = 0xcccccc;
+            if(type === 'yacht') color = 0xffffff;
+            const hull = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 7), new THREE.MeshStandardMaterial({color}));
+            hull.position.y = 0.2;
+            this.group.add(hull);
+        }
+        setNightMode(isNight) {} // Simplified
+        animate(time) { this.group.position.y = Math.sin(time) * 0.1 - 0.2; }
+    }
+
+    class SeabedController {
+        constructor() {
+            this.group = new THREE.Group();
+            this.initSeabed();
+            this.initRuins();
+            this.group.visible = false;
+        }
+        setVisible(v) { this.group.visible = v; }
+        addToScene(scene) { scene.add(this.group); }
+        initSeabed() {
+            const geo = new THREE.PlaneGeometry(2000, 2000);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xe6c288 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.rotation.x = -Math.PI/2;
+            mesh.position.y = -25;
+            this.group.add(mesh);
+        }
+        initRuins() {
+            // Simple Pillars
+            for(let i=0; i<10; i++) {
+                const mesh = new THREE.Mesh(new THREE.CylinderGeometry(2,2,30), new THREE.MeshStandardMaterial({color:0x8899a6}));
+                mesh.position.set((Math.random()-0.5)*100, -10, -20 - Math.random()*50);
+                this.group.add(mesh);
+            }
+        }
+        animate(t) {}
+    }
+
+    class RodController {
+        constructor() {
+            this.group = new THREE.Group();
+            // Simplified Rod Visuals for robustness
+            const geo = new THREE.CylinderGeometry(0.05, 0.1, 5);
+            geo.translate(0, 2.5, 0);
+            this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: 0x5c4033}));
+            this.mesh.rotation.x = -Math.PI/2;
+            this.group.add(this.mesh);
+            
+            this.tip = new THREE.Object3D();
+            this.tip.position.set(0, 5, 0);
+            this.mesh.add(this.tip);
+
+            this.group.position.set(0, 2.0, 8.5);
+            this.group.rotation.x = -1.2;
+        }
+        addToScene(scene) { scene.add(this.group); }
+        getTipWorldPosition(v) { this.tip.getWorldPosition(v); }
+        update(level, enchant, skin) {
+             // Change color based on skin
+             let c = 0x5c4033;
+             if(skin==='carbon') c=0x111111;
+             if(skin==='magma') c=0xaa0000;
+             if(skin==='bone') c=0xeeeeee;
+             this.mesh.material.color.setHex(c);
+        }
+        triggerCast() {}
+        setReeling(r) {}
+        animate(t) { this.group.position.y = 2.0 + Math.sin(t)*0.05; }
+    }
+
+    class BobberController {
+        constructor() {
+            this.group = new THREE.Group();
+            this.mesh = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshStandardMaterial({color:0xff0000}));
+            this.group.add(this.mesh);
+            this.group.visible = false;
+        }
+        addToScene(scene) { scene.add(this.group); }
+        setVisible(v) { this.group.visible = v; }
+        get position() { return this.group.position; }
+        updateEnchant(e) {}
+        animate(t) { this.group.position.y = Math.sin(t*3)*0.1; }
+    }
+
+    class FishingSpotController {
+        constructor() { this.group = new THREE.Group(); }
+        addToScene(scene) { scene.add(this.group); }
+        update(dt, w) {}
+    }
+
+
+    // ==========================================
+    // 3. REACT COMPONENTS
+    // ==========================================
+
+    const Minigame = ({ fish, rodLevel, enchant, isAuto, onEnd }) => {
+        const [progress, setProgress] = useState(30);
+        const [timeLeft, setTimeLeft] = useState(10);
+        
+        useEffect(() => {
+            const interval = setInterval(() => {
+                setTimeLeft(t => {
+                    if (t <= 0) { clearInterval(interval); onEnd(false); return 0; }
+                    return t - 0.1;
+                });
+                setProgress(p => {
+                    const gain = isAuto ? 1.5 : 0.5; 
+                    if (p >= 100) { clearInterval(interval); onEnd(true); return 100; }
+                    return p + gain;
+                });
+            }, 100);
+            return () => clearInterval(interval);
+        }, []);
+
+        return (
+            <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                <div className="bg-slate-900/90 p-6 rounded-2xl border border-white/20 text-white flex flex-col items-center gap-4 shadow-xl">
+                    <div className="text-2xl font-bold animate-pulse text-yellow-400">{isAuto ? "AUTO-FISHING" : "REELING!"}</div>
+                    <div className="w-64 h-6 bg-gray-800 rounded-full overflow-hidden border border-gray-600">
+                        <div className="h-full bg-green-500 transition-all duration-100" style={{ width: `${progress}%` }}></div>
+                    </div>
+                    <div className="font-mono text-xl">{timeLeft.toFixed(1)}s</div>
+                    <div className="text-xs text-gray-400">Hold Space (Simulated)</div>
+                </div>
+            </div>
+        );
+    };
+
+    const CatchNotification = ({ data }) => {
+        if (!data) return null;
+        return (
+            <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white px-6 py-3 rounded-full flex items-center gap-4 border border-white/20 shadow-2xl animate-[slideDown_0.5s_ease-out]">
+                <div>
+                    <div className="text-xs font-bold text-yellow-400 uppercase">{data.fish.name}</div>
+                    <div className="font-bold text-xl">+{data.value} G</div>
+                </div>
+            </div>
+        );
+    };
+
+    const FishViewer = ({ fishType, onClose }) => {
+        // Simplified Voxel Viewer using DOM for standalone robustness
+        return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={onClose}>
+                <div className="bg-slate-800 p-8 rounded-2xl text-center text-white border border-slate-600">
+                    <h2 className="text-3xl font-bold mb-2" style={{color: fishType.color}}>{fishType.name}</h2>
+                    <p className="text-slate-400 mb-4">Voxel Model Preview</p>
+                    <div className="w-64 h-64 bg-slate-900 rounded-xl flex items-center justify-center border border-slate-700 mb-4">
+                         <span className="text-6xl">🐟</span>
+                    </div>
+                    <p className="text-sm text-slate-500">Click anywhere to close</p>
+                </div>
+            </div>
+        );
+    };
+
+    const ThreeView = React.memo(({ rodLevel, enchant, boatType, rodSkin, map, onReady, onWeatherUpdate }) => {
+        const containerRef = useRef(null);
+        const apiRef = useRef({ cast: () => {}, reset: () => {}, setReeling: () => {} });
+        
+        useEffect(() => {
+            if (!containerRef.current) return;
+            
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x87ceeb, 0.002);
+            
+            const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 5, 10); camera.lookAt(0, 0, -10);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            containerRef.current.innerHTML = '';
+            containerRef.current.appendChild(renderer.domElement);
+
+            const sun = new THREE.DirectionalLight(0xffffff, 1);
+            sun.position.set(10, 20, 10); scene.add(sun);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+            // Water (Simulated Texture)
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#8080ff'; ctx.fillRect(0,0,512,512);
+            const normTex = new THREE.CanvasTexture(canvas);
+            normTex.wrapS = normTex.wrapT = THREE.RepeatWrapping;
+
+            const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
+                textureWidth: 512, textureHeight: 512, waterNormals: normTex,
+                sunDirection: new THREE.Vector3(), sunColor: 0xffffff, waterColor: 0x004966, distortionScale: 3.7
+            });
+            water.rotation.x = -Math.PI/2; scene.add(water);
+
+            const sky = new Sky(); sky.scale.setScalar(10000); scene.add(sky);
+            const uniforms = sky.material.uniforms;
+            uniforms['turbidity'].value = 10; uniforms['rayleigh'].value = 2;
+            uniforms['sunPosition'].value.copy(sun.position);
+
+            // Controllers
+            const weather = new WeatherController(scene, sky, sun, new THREE.AmbientLight(), water);
+            const rod = new RodController(); rod.addToScene(scene);
+            const boat = new BoatController(); boat.addToScene(scene);
+            const bobber = new BobberController(); bobber.addToScene(scene);
+            const seabed = new SeabedController(); seabed.addToScene(scene);
+            
+            // Refs for API
+            const refs = { rod, bobber };
+
+            apiRef.current.cast = (d) => {
+                rod.triggerCast();
+                bobber.setVisible(true);
+                bobber.group.position.set(0, 0, -10 - d/5);
+            };
+            apiRef.current.reset = () => {
+                rod.setReeling(false);
+                bobber.setVisible(false);
+            };
+            apiRef.current.setReeling = (v) => rod.setReeling(v);
+            if(onReady) onReady(apiRef.current);
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                const t = Date.now()*0.001;
+                water.material.uniforms['time'].value += 1.0/60.0;
+                weather.update(0.016);
+                rod.animate(t);
+                boat.animate(t);
+                bobber.animate(t);
+                
+                seabed.setVisible(map === 'atlantis');
+                
+                rod.update(rodLevel, enchant, rodSkin);
+                boat.update(boatType);
+
+                if(onWeatherUpdate) onWeatherUpdate(weather.state.weather, weather.state.time);
+                renderer.render(scene, camera);
+            };
+            animate();
+            
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth/window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }, [map]); // Re-init if map changes drastically, or handle inside loop
+
+        return <div ref={containerRef} className="absolute inset-0 z-0" />;
+    });
+
+
+    // ==========================================
+    // 4. MAIN APP
+    // ==========================================
+
+    const App = () => {
+        const [gameState, setGameState] = useState({
+            gold: 250, rodLevel: 1, maxDistance: 0, inventory: [], equippedEnchant: 'none',
+            bestFish: {}, currentMission: { fishName: 'Goldfish', required: 3, count: 0, reward: 300 },
+            stats: { totalCaught: 0, maxValueCaught: 0 },
+            boatType: 'wooden', ownedBoats: ['wooden'], rodSkin: 'default', ownedSkins: ['default'],
+            currentMap: 'ocean', unlockedMaps: ['ocean', 'atlantis']
+        });
+        const [status, setStatus] = useState('idle');
+        const [activePanel, setActivePanel] = useState(null);
+        const [shopTab, setShopTab] = useState('gear');
+        const [activeFish, setActiveFish] = useState(null);
+        const [toast, setToast] = useState(null);
+        const [lastCatch, setLastCatch] = useState(null);
+        const [weather, setWeather] = useState('CLEAR');
+        const [gameTime, setGameTime] = useState(8);
+        const [isAuto, setIsAuto] = useState(false);
+        const [selectedFish, setSelectedFish] = useState(null);
+
+        const threeApi = useRef(null);
+        
+        // Load/Save
+        useEffect(() => {
+            const saved = localStorage.getItem('fg_offline_v1');
+            if(saved) setGameState(prev => ({...prev, ...JSON.parse(saved)}));
+        }, []);
+        useEffect(() => {
+            localStorage.setItem('fg_offline_v1', JSON.stringify(gameState));
+        }, [gameState]);
+
+        const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+        const castRod = () => {
+            if(status !== 'idle') return;
+            setStatus('casting');
+            const dist = 50 + gameState.rodLevel * 10;
+            if(threeApi.current) threeApi.current.cast(dist);
+            
+            setTimeout(() => {
+                setStatus('floating');
+                setTimeout(() => {
+                    const pool = FISH_TYPES; // Simplified logic
+                    const fish = pool[Math.floor(Math.random() * pool.length)];
+                    setActiveFish(fish);
+                    setStatus('bite');
+                    if(!isAuto) showToast("BITE!");
+                }, 3000);
+            }, 1000);
+        };
+
+        const startPull = () => {
+            if(status === 'bite') {
+                setStatus('pulling');
+                if(threeApi.current) threeApi.current.setReeling(true);
+            }
+        };
+
+        const onMinigameEnd = (success) => {
+            if(threeApi.current) threeApi.current.setReeling(false);
+            if(success && activeFish) {
+                const val = Math.floor(activeFish.base * (1 + gameState.rodLevel * 0.1));
+                setGameState(prev => ({
+                    ...prev,
+                    gold: prev.gold + val,
+                    stats: { ...prev.stats, totalCaught: prev.stats.totalCaught + 1 },
+                    inventory: [...prev.inventory, {id: Date.now(), name: activeFish.name, value: val, type: activeFish.id}]
+                }));
+                setLastCatch({fish: activeFish, value: val});
+                setTimeout(()=>setLastCatch(null), 3000);
+                if(isAuto) showToast(`Caught ${activeFish.name}`);
+            } else {
+                showToast("Escaped!");
+            }
+            setStatus('idle');
+            setActiveFish(null);
+            if(threeApi.current) threeApi.current.reset();
+        };
+
+        // Auto
+        useEffect(() => {
+            if(!isAuto) return;
+            let t;
+            if(status === 'idle') t = setTimeout(castRod, 1500);
+            if(status === 'bite') t = setTimeout(startPull, 400);
+            return () => clearTimeout(t);
+        }, [isAuto, status]);
+
+        const formatTime = t => `${Math.floor(t)}:00`;
+
+        return (
+            <div className="relative w-full h-screen overflow-hidden">
+                <ThreeView 
+                    rodLevel={gameState.rodLevel} enchant={gameState.equippedEnchant}
+                    boatType={gameState.boatType} rodSkin={gameState.rodSkin} map={gameState.currentMap}
+                    onReady={api => threeApi.current = api}
+                    onWeatherUpdate={(w,t) => { setWeather(w); setGameTime(t); }}
+                />
+                
+                <CatchNotification data={lastCatch} />
+                
+                {/* HUD */}
+                <div className="absolute top-4 left-4 right-4 flex justify-between pointer-events-none z-10">
+                     <div className="glass-panel p-3 rounded-xl pointer-events-auto min-w-[140px]">
+                        <div className="flex justify-between text-xs font-bold text-slate-600 mb-1 border-b pb-1">
+                            <span>{formatTime(gameTime)}</span>
+                            <span>{weather}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-yellow-600 font-bold">
+                            <Coins size={16} /> {gameState.gold}
+                        </div>
+                        <div className="text-xs text-slate-500">Lvl {gameState.rodLevel}</div>
+                     </div>
+                     
+                     <div className="flex gap-2 pointer-events-auto">
+                        <button onClick={()=>setIsAuto(!isAuto)} className={`p-2 rounded-lg shadow ${isAuto?'bg-green-500 text-white':'bg-white'}`}><Bot /></button>
+                        <button onClick={()=>setActivePanel(p=>p==='maps'?null:'maps')} className="bg-white p-2 rounded-lg shadow"><MapIcon /></button>
+                        <button onClick={()=>setActivePanel(p=>p==='shop'?null:'shop')} className="bg-white p-2 rounded-lg shadow"><ShoppingBag /></button>
+                        <button onClick={()=>setActivePanel(p=>p==='museum'?null:'museum')} className="bg-white p-2 rounded-lg shadow"><Trophy /></button>
+                     </div>
+                </div>
+
+                {/* Action Buttons */}
+                {!isAuto && (
+                    <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+                        {status === 'idle' && (
+                            <button onClick={castRod} className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-full font-bold shadow-xl text-lg hover:scale-105 transition">CAST</button>
+                        )}
+                        {(status === 'floating' || status === 'bite') && (
+                            <button onClick={startPull} className={`px-8 py-3 rounded-full font-bold shadow-xl text-lg ${status==='bite'?'bg-red-600 animate-pulse':'bg-blue-500'} text-white`}>
+                                {status==='bite' ? 'PULL!' : 'WAIT'}
+                            </button>
+                        )}
+                    </div>
+                )}
+                
+                {status === 'pulling' && activeFish && (
+                    <Minigame fish={activeFish} rodLevel={gameState.rodLevel} enchant={gameState.equippedEnchant} isAuto={isAuto} onEnd={onMinigameEnd} />
+                )}
+                
+                {selectedFish && <FishViewer fishType={selectedFish} onClose={()=>setSelectedFish(null)} />}
+
+                {/* PANELS */}
+                {activePanel === 'maps' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-30" onClick={()=>setActivePanel(null)}>
+                        <div className="bg-white p-6 rounded-2xl w-full max-w-sm" onClick={e=>e.stopPropagation()}>
+                            <h2 className="font-bold text-xl mb-4">Travel</h2>
+                            {MAPS.map(m => (
+                                <button key={m.id} 
+                                    onClick={()=>{ setGameState(p=>({...p, currentMap:m.id})); setActivePanel(null); }}
+                                    className={`w-full p-4 mb-2 rounded border text-left ${gameState.currentMap===m.id?'bg-green-100 border-green-500':''}`}
+                                >
+                                    <div className="font-bold">{m.name}</div>
+                                    <div className="text-xs text-gray-500">{m.desc}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {activePanel === 'shop' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-30" onClick={()=>setActivePanel(null)}>
+                        <div className="bg-white p-6 rounded-2xl w-full max-w-sm overflow-y-auto max-h-[80vh]" onClick={e=>e.stopPropagation()}>
+                            <div className="flex justify-between mb-4">
+                                <h2 className="font-bold text-xl">Shop</h2>
+                                <div className="flex gap-2">
+                                    <button onClick={()=>setShopTab('gear')} className={`text-sm font-bold ${shopTab==='gear'?'text-blue-500':''}`}>Gear</button>
+                                    <button onClick={()=>setShopTab('skins')} className={`text-sm font-bold ${shopTab==='skins'?'text-blue-500':''}`}>Skins</button>
+                                </div>
+                            </div>
+                            
+                            {shopTab === 'gear' && (
+                                <div className="flex justify-between items-center p-3 border rounded bg-blue-50">
+                                    <div>
+                                        <div className="font-bold">Upgrade Rod</div>
+                                        <div className="text-xs">Lvl {gameState.rodLevel}</div>
+                                    </div>
+                                    <button onClick={()=>setGameState(p=>({...p, gold:p.gold-100, rodLevel:p.rodLevel+1}))} className="bg-green-500 text-white px-3 py-1 rounded font-bold">100 G</button>
+                                </div>
+                            )}
+                            {shopTab === 'skins' && (
+                                <div className="space-y-2">
+                                    {ROD_SKINS.map(s => (
+                                        <div key={s.id} className="flex justify-between items-center p-2 border rounded">
+                                            <div className="text-sm font-bold">{s.name}</div>
+                                            <button 
+                                                onClick={()=>{
+                                                    if(gameState.ownedSkins.includes(s.id)) setGameState(p=>({...p, rodSkin:s.id}));
+                                                    else if(gameState.gold >= s.price) setGameState(p=>({...p, gold:p.gold-s.price, ownedSkins:[...p.ownedSkins, s.id], rodSkin:s.id}));
+                                                }}
+                                                className={`px-2 py-1 rounded text-xs font-bold text-white ${gameState.rodSkin===s.id?'bg-gray-400':gameState.ownedSkins.includes(s.id)?'bg-blue-500':'bg-green-500'}`}
+                                            >
+                                                {gameState.rodSkin===s.id ? 'Equipped' : gameState.ownedSkins.includes(s.id) ? 'Equip' : `${s.price} G`}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {activePanel === 'museum' && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-30" onClick={()=>setActivePanel(null)}>
+                         <div className="bg-white p-6 rounded-2xl w-full max-w-sm max-h-[80vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+                             <h2 className="font-bold text-xl mb-4">Museum</h2>
+                             <div className="grid grid-cols-3 gap-2">
+                                 {FISH_TYPES.map(f => (
+                                     <button key={f.id} onClick={()=>setSelectedFish(f)} className="border rounded p-2 flex flex-col items-center">
+                                         <div className="text-xl">🐟</div>
+                                         <div className="text-[10px] truncate w-full text-center">{f.name}</div>
+                                     </button>
+                                 ))}
+                             </div>
+                         </div>
+                    </div>
+                )}
+
+                {toast && (
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 text-white px-6 py-3 rounded-xl font-bold pointer-events-none z-50">
+                        {toast}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+    </script>
+</body>
+</html>
+    

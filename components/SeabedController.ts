@@ -181,6 +181,10 @@ export class SeabedController {
     scene.add(this.group);
   }
 
+  setVisible(visible: boolean) {
+    this.group.visible = visible;
+  }
+
   animate(time: number) {
       // Pulse Crystals
       this.crystals.forEach((c, i) => {
